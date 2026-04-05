@@ -1,0 +1,52 @@
+services:
+
+  # -----------------------------------------------------------------------
+  # transcript-api — the long-running HTTP service
+  # -----------------------------------------------------------------------
+  transcript-api:
+    build: .
+    container_name: transcript-api
+    ports:
+      - "8000:8000"
+    environment:
+      OUTPUT_DIR: /data/transcripts
+    volumes:
+      # Bind-mount a host folder so transcript files are directly accessible
+      # on your machine at ./transcripts (created automatically by Docker).
+      - ./transcripts:/data/transcripts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # -----------------------------------------------------------------------
+  # transcript-consumer — example of a second container calling the API
+  # and reading the shared output directory.
+  #
+  # Run with:  docker compose --profile example up
+  # -----------------------------------------------------------------------
+  transcript-consumer:
+    image: curlimages/curl:latest
+    container_name: transcript-consumer
+    depends_on:
+      transcript-api:
+        condition: service_healthy
+    # The shared bind mount gives this container read access to transcript files
+    volumes:
+      - ./transcripts:/transcripts:ro
+    # POST a download request then list the produced files
+    command: >
+      sh -c "
+        curl -s -X POST http://transcript-api:8000/transcripts
+          -H 'Content-Type: application/json'
+          -d '{\"video_id\": \"DwcePNmFKUw\"}'
+          | cat &&
+        echo '--- files on shared volume ---' &&
+        find /transcripts -type f
+      "
+    profiles:
+      - example
